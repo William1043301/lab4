@@ -18,8 +18,10 @@ def createBw():
     :returns: A 6x2 array Bw
     """
     ### FILL in your code here (Q2 and Q3)
-
-
+    Bw  = np.zeros((6,2)) #matrix of lower bound and upperbound for x y z roll pitch yaw
+    Bw[2] = np.array([-0.02, 0.02])
+    #Bw[5] = np.array([-np.pi,np.pi]) #for Q2
+    Bw[5] = np.array([-(np.pi/2),np.pi/2]) #for Q3
     ###
     return Bw
 
@@ -215,8 +217,15 @@ def main(if_sim):
     for configuration in configurations:
         # Your AdaRRT planner
         ### FILL in your code here (Q4)
-
-
+        adaRRT = AdaRRT(
+            start_state=np.array(arm_home),
+            goal_state=np.array(configuration), #configurations is a set of goal points at each step
+            ada=ada,
+            ada_collision_constraint=full_collision_constraint,
+            step_size=0.25, #0.15
+            goal_precision=0.2)
+        
+        trajectory = adaRRT.build()
         ###
         if trajectory:
             break
@@ -252,7 +261,8 @@ def main(if_sim):
     # execute the grasp
     print("Closing hand")
     ### FILL in your code here (Q5)
-
+    preshape = (1.2, 1.2)
+    close_hand(hand, preshape)
     ###
 
     raw_input('Press ENTER after robot has succeeded closing the hand...')
@@ -261,8 +271,18 @@ def main(if_sim):
 
     # compute the Jacobian pseudo-inverse for moving the hand upwards
     ### FILL in your code here (Q6 and Q7)
-
-    
+    q = arm_skeleton.get_positions()
+    #dX = np.array([0, 0, 0, -0.5, 0, 0]).reshape(-1,1) #run one iteration for Q6
+    dX = np.array([0, 0, 0, -0.001, 0, 0]).reshape(-1,1) #run 50 iteration for Q7 to make the cup above the table for 0.5m
+    #for i in range(1): #run one iteration for Q6
+    for i in range(500): #run 500 iteration for Q7
+        Jacobian = arm_skeleton.get_jacobian(hand.get_endeffector_body_node())
+        pseudoinverse = np.linalg.pinv(Jacobian) #pseudoinverse
+        dQ_error = np.matmul(pseudoinverse, dX)
+        dQ_error = dQ_error.reshape((-1)) 
+        q = arm_skeleton.get_positions()
+        q = q - dQ_error
+        ada.set_positions(q)
     ###
     if if_sim:
             ada.set_positions(q)

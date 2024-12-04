@@ -104,12 +104,16 @@ class AdaRRT():
             goal on success. On failure, returns None.
         """
         for k in range(self.max_iter):
-            # FILL in your code here
+            if np.random.uniform() <= 0.2:
+                sample = self._get_random_sample_near_goal()
+            else:
+                sample = self._get_random_sample()               
+            neighbor = self._get_nearest_neighbor(sample)
+            new_node = self._extend_sample(sample, neighbor)
 
             if new_node and self._check_for_completion(new_node):
-                # FILL in your code here
-
-                return path
+                #new_node = self.shortcut_path(new_node) #smooth the path
+                return self._trace_path_from_start(new_node)
 
         print("Failed to find path from {0} to {1} after {2} iterations!".format(
             self.start.state, self.goal.state, self.max_iter))
@@ -122,6 +126,10 @@ class AdaRRT():
             space.
         """
         # FILL in your code here
+        return np.array([np.random.uniform(low, high) for low, high in zip(self.joint_lower_limits, self.joint_upper_limits)])
+    
+    def _get_random_sample_near_goal(self):
+        return self.goal.state + np.random.uniform(-0.05, 0.05, size=self.goal.state.shape)
 
     def _get_nearest_neighbor(self, sample):
         """
@@ -132,6 +140,7 @@ class AdaRRT():
         :returns: A Node object for the closest neighbor.
         """
         # FILL in your code here
+        return min(self.start, key=lambda node: np.linalg.norm(node.state - sample))
 
     def _extend_sample(self, sample, neighbor):
         """
@@ -145,6 +154,13 @@ class AdaRRT():
         :returns: The new Node object. On failure (collision), returns None.
         """
         # FILL in your code here
+        direction = sample - neighbor.state
+        direction = direction / np.linalg.norm(direction)
+        new_node = neighbor.state + direction * self.step_size
+
+        if not self._check_for_collision(new_node):
+            return neighbor.add_child(new_node)
+        return None
 
     def _check_for_completion(self, node):
         """
@@ -154,6 +170,8 @@ class AdaRRT():
         :returns: Boolean indicating node is close enough for completion.
         """
         # FILL in your code here
+        return np.linalg.norm(node.state - self.goal.state) < self.goal_precision
+
 
     def _trace_path_from_start(self, node=None):
         """
@@ -165,6 +183,14 @@ class AdaRRT():
             ending at the goal state.
         """
         # FILL in your code here
+        if node is None:
+            node = self.goal
+
+        path = []
+        while node is not None:
+            path.append(node.state)
+            node = node.parent
+        return path[::-1]
 
     def _check_for_collision(self, sample):
         """
@@ -188,7 +214,8 @@ def main():
     armHome = [-1.5, 3.22, 1.23, -2.19, 1.8, 1.2]
     goalConfig = [-1.72, 4.44, 2.02, -2.04, 2.66, 1.39]
     delta = 0.25
-    eps = 1.0
+    #eps = 1.0
+    eps = 0.2 
 
     if sim:
         ada.set_positions(goalConfig)
@@ -238,12 +265,14 @@ def main():
         for i, waypoint in enumerate(path):
             waypoints.append((0.0 + i, waypoint))
 
-        t0 = time.process_time()
+        t0 = time.clock()
         traj = ada.compute_joint_space_path(
             ada.get_arm_state_space(), waypoints)
-        t = time.process_time() - t0
+        #traj = ada.compute_smooth_joint_space_path(
+        #    ada.get_arm_state_space(), waypoints)
+        t = time.clock() - t0
         print(str(t) + "seconds elapsed")
-        input('Press ENTER to execute trajectory and exit')
+        raw_input('Press ENTER to execute trajectory and exit')
         ada.execute_trajectory(traj)
         rospy.sleep(1.0)
 

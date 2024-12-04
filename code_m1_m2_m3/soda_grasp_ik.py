@@ -18,8 +18,9 @@ def createBw():
     :returns: A 6x2 array Bw
     """
     ### FILL in your code here (Q2 and Q3)
-
-
+    Bw  = np.zeros((6,2)) #matrix of lower bound and upperbound for x y z roll pitch yaw
+    Bw[2] = np.array([-0.02, 0.02])
+    Bw[5] = np.array([-(np.pi/2),np.pi/2])
     ###
     return Bw
 
@@ -145,7 +146,7 @@ def main(if_sim):
     if if_sim:
         ada.set_positions(arm_home)
     else:
-        input("Please move arm to home position with the joystick. " +
+        raw_input("Please move arm to home position with the joystick. " +
             "Press ENTER to continue...")
 
     viewer.add_frame(hand_node)
@@ -179,12 +180,12 @@ def main(if_sim):
         collision_free_constraint)
 
     rospy.sleep(1.)
-    input("Press ENTER to generate the TSR...")
+    raw_input("Press ENTER to generate the TSR...")
 
     # create TSR
     sodaTSR = createSodaTSR(soda_pose, hand)
     marker = viewer.add_tsr_marker(sodaTSR)
-    input("Press ENTER to start planning goals...")
+    raw_input("Press ENTER to start planning goals...")
 
     # set up IK generator
     ik_sampleable = adapy.create_ik(
@@ -210,13 +211,20 @@ def main(if_sim):
     if if_sim:
         ada.set_positions(arm_home)
 
-    input("Press ENTER to start RRT planning...")
+    raw_input("Press ENTER to start RRT planning...")
     trajectory = None
     for configuration in configurations:
         # Your AdaRRT planner
         ### FILL in your code here (Q4)
-
-
+        adaRRT = AdaRRT(
+            start_state=np.array(arm_home),
+            goal_state=np.array(configuration), #configurations is a set of goal points at each step
+            ada=ada,
+            ada_collision_constraint=full_collision_constraint,
+            step_size=0.25, #0.15
+            goal_precision=0.2)
+        
+        trajectory = adaRRT.build()
         ###
         if trajectory:
             break
@@ -234,35 +242,46 @@ def main(if_sim):
         waypoints.append((0.0 + i, waypoint))
 
     # compute trajectory in joint space
-    t0 = time.process_time()
+    t0 = time.clock()
     traj = ada.compute_joint_space_path(ada.get_arm_state_space(), waypoints)
     retimed_traj = ada.compute_retime_path(ada.get_arm_skeleton(), traj)
-    t = time.process_time() - t0
+    t = time.clock() - t0
     print(str(t) + "seconds elapsed")
-    input('Press ENTER to execute the trajectory...')
+    raw_input('Press ENTER to execute the trajectory...')
 
     # execute the trajectory
     if not if_sim:
         ada.start_trajectory_executor()
     ada.execute_trajectory(retimed_traj)
-    input('Press ENTER after robot has approached the can...')
+    raw_input('Press ENTER after robot has approached the can...')
     if not if_sim:
         ada.set_positions(waypoints[-1][1])
 
     # execute the grasp
     print("Closing hand")
     ### FILL in your code here (Q5)
-
+    preshape = (1.2, 1.2)
+    close_hand(hand, preshape)
     ###
 
-    input('Press ENTER after robot has succeeded closing the hand...')
+    raw_input('Press ENTER after robot has succeeded closing the hand...')
     if if_sim:
         hand.grab(soda)
 
     # compute the Jacobian pseudo-inverse for moving the hand upwards
     ### FILL in your code here (Q6 and Q7)
-
-    
+    q = arm_skeleton.get_positions()
+    dX = np.array([0, 0, 0, -0.5, 0, 0]).reshape(-1,1) #run one iteration for Q6
+    #dX = np.array([0, 0, 0, -0.001, 0, 0]).reshape(-1,1) #run 50 iteration for Q7 to make the cup above the table for 0.5m
+    for i in range(1): #run one iteration for Q6
+    #for i in range(500): #run 500 iteration for Q7
+        Jacobian = arm_skeleton.get_jacobian(hand.get_endeffector_body_node())
+        pseudoinverse = np.linalg.pinv(Jacobian) #pseudoinverse
+        dQ_error = np.matmul(pseudoinverse, dX)
+        dQ_error = dQ_error.reshape((-1)) 
+        q = arm_skeleton.get_positions()
+        q = q - dQ_error
+        ada.set_positions(q)
     ###
     if if_sim:
             ada.set_positions(q)
@@ -275,7 +294,7 @@ def main(if_sim):
         retimed_traj = ada.compute_retime_path(ada.get_arm_skeleton(), traj)
         ada.execute_trajectory(retimed_traj)
 
-    input('Press ENTER after robot has succeeded lifting up the can...')
+    raw_input('Press ENTER after robot has succeeded lifting up the can...')
 
     # clean the scene
     # world.remove_skeleton(soda)
